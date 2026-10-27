@@ -1,0 +1,16 @@
+{
+  "name": "pm-studio",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "app:install": "npm install --prefix frontend && npm install --prefix backend",
+    "app:build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "build": "npm run app:install && npm run app:build",
+    "start": "NODE_ENV=production npm run start --prefix backend",
+    "start-win": "set NODE_ENV=production && npm run start --prefix backend"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

@@ -1,0 +1,32 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node dist/index.cjs",
+    "start:prod": "NODE_ENV=production node src/server.js",
+    "start:prod-win": "set NODE_ENV=production && node src/server.js",
+    "build:reset": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "esbuild": "esbuild src/server.js --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs",
+    "build": "npm run build:reset && npm run esbuild"
+  },
+  "keywords": [],
+  "author": "",
+  "type": "module",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.2.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "esbuild": "^0.27.3"
+  }
+}
