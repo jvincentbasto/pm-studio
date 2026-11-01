@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] A user can register with email and password, verify their email, and sign in and out securely.
-- [ ] A user can recover access to their account without exposing whether an email address is registered.
-- [ ] A newly registered user can create a workspace and becomes its owner.
-- [ ] Server-side checks prevent unauthenticated access to account and workspace data.
-- [ ] Backend tests cover account and workspace behavior; browser tests cover registration through workspace creation.
+- [x] A user can register with email and password, verify their email, and sign in and out securely.
+- [x] A user can recover access to their account without exposing whether an email address is registered.
+- [x] A newly registered user can create a workspace and becomes its owner.
+- [x] Server-side checks prevent unauthenticated access to account and workspace data.
+- [x] Backend tests cover account and workspace behavior; browser tests cover registration through workspace creation.

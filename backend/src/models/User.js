@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema(
     firstName: {
       type: String,
       required: true,
+      maxlength: 80,
     },
     middleName: {
       type: String,
@@ -14,37 +15,49 @@ const userSchema = new mongoose.Schema(
     lastName: {
       type: String,
       required: true,
+      maxlength: 80,
     },
     email: {
       type: String,
       required: true,
       unique: true,
+      lowercase: true,
+      trim: true,
+      maxlength: 254,
     },
     password: {
       type: String,
       required: true,
-      minlength: 6,
+      minlength: 8,
+      maxlength: 128,
+      select: false,
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationTokenHash: String,
+    emailVerificationExpiresAt: Date,
+    passwordResetTokenHash: String,
+    passwordResetExpiresAt: Date,
+    tokenVersion: {
+      type: Number,
+      default: 0,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    // next();
-  } catch (error) {
-    // next(error);
+userSchema.pre("save", async function () {
+  if (this.isModified("password")) {
+    this.password = await bcrypt.hash(this.password, 10);
   }
 });
 
 userSchema.methods.matchPassword = async function (enteredPassword) {
   const isPasswordCorrect = await bcrypt.compare(
     enteredPassword,
-    this.password
+    this.password,
   );
   return isPasswordCorrect;
 };

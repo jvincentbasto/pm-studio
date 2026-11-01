@@ -13,6 +13,12 @@ const envs = {
 
   jwtSecret: processEnv.JWT_SECRET_KEY,
   nodeEnv: processEnv.NODE_ENV ?? "development",
+  appUrl: processEnv.APP_URL ?? "http://localhost:3000",
+  emailHost: processEnv.EMAIL_HOST,
+  emailPort: Number(processEnv.EMAIL_PORT ?? 587),
+  emailUser: processEnv.EMAIL_USER,
+  emailPassword: processEnv.EMAIL_PASSWORD,
+  emailFrom: processEnv.EMAIL_FROM,
 };
 
 const constants = {

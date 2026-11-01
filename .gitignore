@@ -26,3 +26,7 @@ dist-ssr
 .env*
 .env.*
 !.env.example
+
+# Playwright
+frontend/playwright-report/
+frontend/test-results/

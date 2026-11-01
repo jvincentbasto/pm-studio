@@ -1,13 +1,7 @@
-import express from "express";
 import dotenv from "dotenv";
-import cookieParser from "cookie-parser";
-import cors from "cors";
-import path from "path";
-
 import { utils } from "./lib/utils.js";
 import { connectDB } from "./lib/db.js";
-
-import authRoutes from "./routes/auth.route.js";
+import app from "./app.js";
 
 //
 const { isProduction, envFile } = utils.getEnvFilename();
@@ -15,23 +9,6 @@ const { isProduction, envFile } = utils.getEnvFilename();
 //
 dotenv.config({ path: envFile, override: true });
 const PORT = process.env.PORT;
-const __dirname = path.resolve();
-
-const app = express();
-app.use(
-  cors({
-    origin: ["http://localhost:3000"],
-    credentials: true, // allow frontend to send cookies
-  })
-);
-app.use(express.json());
-app.use(cookieParser());
-
-// routes
-app.get("/api", async (req, res) => {
-  res.status(200).json({ success: true });
-});
-app.use("/api/auth", authRoutes);
 
 // production setup
 // if (isProduction) {
