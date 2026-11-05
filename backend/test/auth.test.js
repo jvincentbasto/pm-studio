@@ -594,12 +594,24 @@ test("workspace creation rejects names outside the supported length", async () =
 
 test("workspace list returns only records found for the signed-in member", async () => {
   let query;
-  const workspaces = [{ _id: "workspace-1", name: "Analytical Engine" }];
+  const workspaces = [
+    {
+      _id: "workspace-1",
+      name: "Analytical Engine",
+      owner: "owner-1",
+      members: [{ user: "user-1", role: "member" }],
+      invitations: [{ _id: "invite-1", email: "secret@example.com" }],
+    },
+  ];
   const controller = createWorkspaceController({
     WorkspaceModel: {
       find: (filter) => {
         query = filter;
-        return { sort: async () => workspaces };
+        return {
+          sort: () => ({
+            populate: async () => workspaces,
+          }),
+        };
       },
     },
   });
@@ -609,7 +621,15 @@ test("workspace list returns only records found for the signed-in member", async
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(query, { "members.user": "user-1" });
-  assert.deepEqual(res.body.workspaces, workspaces);
+  assert.deepEqual(res.body.workspaces, [
+    {
+      id: "workspace-1",
+      name: "Analytical Engine",
+      owner: "owner-1",
+      members: [{ id: "user-1", role: "member" }],
+      invitations: [],
+    },
+  ]);
 });
 
 test("session middleware rejects requests without an authentication cookie", async () => {

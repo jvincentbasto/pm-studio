@@ -15,6 +15,8 @@ Next.js frontend for PM Studio. The Express API and MongoDB hold account and wor
 
 The SMTP settings can use any compatible mail service. Keep secrets in local environment files, not source control.
 
+Workspace owners can invite members from the workspace list. Invitation links expire after seven days; invitees must sign in with the invited, verified email address to accept. Owners can revoke pending invitations or remove members from the same view.
+
 ## Checks
 
 - Backend account and workspace tests: `npm test --prefix backend`

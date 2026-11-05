@@ -4,9 +4,9 @@
 
 **Blocked by:** 01: Email/password accounts and workspace creation.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] Owners can create email invitations with expiring, single-use links.
-- [ ] Owners can revoke pending invitations; revoked and expired links grant no access.
-- [ ] Accepted members can access only workspaces they belong to.
-- [ ] Owners can remove members, and removed members immediately lose workspace access.
+- [x] Owners can create email invitations with expiring, single-use links.
+- [x] Owners can revoke pending invitations; revoked and expired links grant no access.
+- [x] Accepted members can access only workspaces they belong to.
+- [x] Owners can remove members, and removed members immediately lose workspace access.

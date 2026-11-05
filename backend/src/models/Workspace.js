@@ -16,6 +16,24 @@ const workspaceMemberSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const workspaceInvitationSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: true,
+    lowercase: true,
+    trim: true,
+  },
+  tokenHash: {
+    type: String,
+    required: true,
+    select: false,
+  },
+  expiresAt: {
+    type: Date,
+    required: true,
+  },
+});
+
 const workspaceSchema = new mongoose.Schema(
   {
     name: {
@@ -32,6 +50,10 @@ const workspaceSchema = new mongoose.Schema(
     },
     members: {
       type: [workspaceMemberSchema],
+      default: [],
+    },
+    invitations: {
+      type: [workspaceInvitationSchema],
       default: [],
     },
   },

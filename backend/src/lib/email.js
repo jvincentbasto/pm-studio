@@ -55,4 +55,14 @@ export const emailService = {
       action: "Reset your password",
       linkLabel: "PM Studio",
     }),
+  sendWorkspaceInvitationEmail: ({ email, token }) =>
+    sendLink({
+      email,
+      path: "/",
+      parameter: "invite",
+      token,
+      subject: "You have a PM Studio workspace invitation",
+      action: "Accept your PM Studio workspace invitation",
+      linkLabel: "Join PM Studio",
+    }),
 };

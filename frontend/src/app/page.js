@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const apiOrigin = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -36,14 +36,58 @@ export default function Home() {
   const [workspaceName, setWorkspaceName] = useState("");
   const [user, setUser] = useState(null);
   const [workspaces, setWorkspaces] = useState([]);
+  const [pendingInviteToken, setPendingInviteToken] = useState("");
+  const [inviteEmails, setInviteEmails] = useState({});
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
+  const acceptingInvite = useRef(null);
+
+  async function loadWorkspaces() {
+    const { workspaces: currentWorkspaces } = await request("/api/workspaces");
+    setWorkspaces(currentWorkspaces);
+  }
+
+  const acceptInvitation = useCallback(async (token) => {
+    if (acceptingInvite.current?.token === token) {
+      return acceptingInvite.current.promise;
+    }
+
+    const promise = request("/api/workspaces/invitations/accept", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }).then((body) => {
+      window.localStorage.removeItem("pm-studio-invite");
+      setPendingInviteToken("");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("invite");
+      window.history.replaceState({}, "", url);
+      setMessage({ type: "success", text: body.message });
+      return body;
+    });
+    acceptingInvite.current = { token, promise };
+    try {
+      return await promise;
+    } catch (error) {
+      if (acceptingInvite.current?.promise === promise) {
+        acceptingInvite.current = null;
+      }
+      throw error;
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
     const url = new URL(window.location.href);
     const verificationToken = url.searchParams.get("verify");
     const requestedResetToken = url.searchParams.get("reset");
+    const inviteToken =
+      url.searchParams.get("invite") ??
+      window.localStorage.getItem("pm-studio-invite");
+
+    if (inviteToken) {
+      window.localStorage.setItem("pm-studio-invite", inviteToken);
+      setPendingInviteToken(inviteToken);
+    }
 
     if (requestedResetToken) {
       setResetToken(requestedResetToken);
@@ -72,6 +116,13 @@ export default function Home() {
         .then(async ({ user: currentUser }) => {
           if (!active) return;
           setUser(currentUser);
+          if (inviteToken) {
+            try {
+              await acceptInvitation(inviteToken);
+            } catch (error) {
+              if (active) setMessage({ type: "error", text: error.message });
+            }
+          }
           const { workspaces: currentWorkspaces } =
             await request("/api/workspaces");
           if (active) {
@@ -89,7 +140,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [acceptInvitation]);
 
   async function submit(event) {
     event.preventDefault();
@@ -110,6 +161,13 @@ export default function Home() {
           body: JSON.stringify({ email, password }),
         });
         setUser(body.user);
+        if (pendingInviteToken) {
+          try {
+            await acceptInvitation(pendingInviteToken);
+          } catch (error) {
+            setMessage({ type: "error", text: error.message });
+          }
+        }
         const workspaceBody = await request("/api/workspaces");
         setWorkspaces(workspaceBody.workspaces);
         setMode("workspace");
@@ -137,11 +195,11 @@ export default function Home() {
         window.history.replaceState({}, "", url);
         setMessage({ type: "success", text: body.message });
       } else if (mode === "workspace") {
-        const body = await request("/api/workspaces", {
+        await request("/api/workspaces", {
           method: "POST",
           body: JSON.stringify({ name: workspaceName }),
         });
-        setWorkspaces((current) => [...current, body.workspace]);
+        await loadWorkspaces();
         setWorkspaceName("");
         setMode("workspace");
         setMessage({ type: "success", text: "Workspace created." });
@@ -150,6 +208,59 @@ export default function Home() {
       if (mode === "signup" && error.status === 503) {
         setMode("verification");
       }
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function inviteMember(event, workspaceId) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      await request(`/api/workspaces/${workspaceId}/invitations`, {
+        method: "POST",
+        body: JSON.stringify({ email: inviteEmails[workspaceId] }),
+      });
+      setInviteEmails((current) => ({ ...current, [workspaceId]: "" }));
+      await loadWorkspaces();
+      setMessage({ type: "success", text: "Invitation sent." });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeInvitation(workspaceId, invitationId) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await request(
+        `/api/workspaces/${workspaceId}/invitations/${invitationId}`,
+        { method: "DELETE" },
+      );
+      await loadWorkspaces();
+      setMessage({ type: "success", text: "Invitation revoked." });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeMember(workspaceId, memberId) {
+    if (!window.confirm("Remove this member from the workspace?")) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await request(`/api/workspaces/${workspaceId}/members/${memberId}`, {
+        method: "DELETE",
+      });
+      await loadWorkspaces();
+      setMessage({ type: "success", text: "Workspace member removed." });
+    } catch (error) {
       setMessage({ type: "error", text: error.message });
     } finally {
       setBusy(false);
@@ -195,10 +306,121 @@ export default function Home() {
                 <ul className="space-y-2">
                   {workspaces.map((workspace) => (
                     <li
-                      className="rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-3"
-                      key={workspace._id ?? workspace.id}
+                      className="space-y-4 rounded-lg border border-slate-700 bg-slate-950/60 p-4"
+                      key={workspace.id}
                     >
-                      {workspace.name}
+                      <h3 className="font-semibold">{workspace.name}</h3>
+                      <div>
+                        <h4 className="text-sm font-medium">Members</h4>
+                        <ul className="mt-2 space-y-2 text-sm text-slate-300">
+                          {workspace.members.map((member) => {
+                            const memberName = [
+                              member.firstName,
+                              member.lastName,
+                            ]
+                              .filter(Boolean)
+                              .join(" ");
+                            return (
+                              <li
+                                className="flex items-center justify-between gap-3"
+                                key={member.id}
+                              >
+                                <span>
+                                  {memberName || member.email || "Member"}
+                                  {member.role === "owner" ? " (owner)" : ""}
+                                </span>
+                                {workspace.owner === user.id &&
+                                  member.role === "member" && (
+                                    <button
+                                      className="text-xs text-rose-300 underline underline-offset-2"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        removeMember(workspace.id, member.id)
+                                      }
+                                      type="button"
+                                    >
+                                      Remove {memberName}
+                                    </button>
+                                  )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+
+                      {workspace.owner === user.id && (
+                        <>
+                          <form
+                            className="flex flex-col gap-2 sm:flex-row"
+                            onSubmit={(event) =>
+                              inviteMember(event, workspace.id)
+                            }
+                          >
+                            <label
+                              className="sr-only"
+                              htmlFor={`invite-${workspace.id}`}
+                            >
+                              Invite email for {workspace.name}
+                            </label>
+                            <input
+                              className="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
+                              id={`invite-${workspace.id}`}
+                              maxLength={254}
+                              onChange={(event) =>
+                                setInviteEmails((current) => ({
+                                  ...current,
+                                  [workspace.id]: event.target.value,
+                                }))
+                              }
+                              required
+                              type="email"
+                              value={inviteEmails[workspace.id] ?? ""}
+                            />
+                            <button
+                              className="rounded-lg bg-cyan-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-60"
+                              disabled={busy}
+                              type="submit"
+                            >
+                              Send invitation
+                            </button>
+                          </form>
+
+                          <div>
+                            <h4 className="text-sm font-medium">
+                              Pending invitations
+                            </h4>
+                            {workspace.invitations.length ? (
+                              <ul className="mt-2 space-y-2 text-sm text-slate-300">
+                                {workspace.invitations.map((invitation) => (
+                                  <li
+                                    className="flex items-center justify-between gap-3"
+                                    key={invitation.id}
+                                  >
+                                    <span>{invitation.email}</span>
+                                    <button
+                                      className="text-xs text-rose-300 underline underline-offset-2"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        revokeInvitation(
+                                          workspace.id,
+                                          invitation.id,
+                                        )
+                                      }
+                                      type="button"
+                                    >
+                                      Revoke invitation
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="mt-2 text-sm text-slate-400">
+                                No pending invitations.
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -244,7 +466,10 @@ export default function Home() {
             <p className="mt-2 text-sm leading-6 text-slate-300">
               {mode === "signup" &&
                 "Create an account to start a shared workspace."}
-              {mode === "login" && "Sign in to continue to your workspaces."}
+              {mode === "login" &&
+                (pendingInviteToken
+                  ? "Sign in with the invited email address to accept your workspace invitation."
+                  : "Sign in to continue to your workspaces.")}
               {mode === "verification" &&
                 "Enter your email to receive a fresh verification link."}
               {mode === "forgot" &&
