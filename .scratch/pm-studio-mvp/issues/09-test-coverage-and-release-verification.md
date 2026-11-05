@@ -7,8 +7,8 @@
 **Status:** ready-for-agent
 
 - [x] Backend and browser tests cover invitation acceptance, expiry, revocation, member removal, and workspace access.
-- [ ] Backend and browser tests cover project workflows and denial of cross-workspace access.
-- [ ] Backend and browser tests cover task workflows, assignment, status changes, invalid assignments, and access control.
+- [x] Backend and browser tests cover project workflows and denial of cross-workspace access.
+- [x] Backend and browser tests cover task workflows, assignment, status changes, invalid assignments, and access control.
 - [ ] Backend and browser tests cover Guest onboarding, core workflows, and data isolation.
 - [ ] Backend tests cover Guest cap boundaries, expiry cleanup, conversion, and conflicting account identities.
 - [ ] Browser smoke tests pass for account access, invitations, projects, Kanban tasks, and Guest conversion using isolated sample data.

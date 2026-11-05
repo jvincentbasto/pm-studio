@@ -47,6 +47,9 @@ test("user registers, verifies email, signs in, and creates a workspace", async 
     }),
   );
   const workspaces = [];
+  await page.route("**/api/workspaces/*/projects", (route) =>
+    route.fulfill({ status: 200, json: { projects: [] } }),
+  );
   await page.route("**/api/workspaces", async (route) => {
     if (route.request().method() === "GET") {
       return route.fulfill({ status: 200, json: { workspaces } });
@@ -171,8 +174,11 @@ test("workspace owner invites by email, revokes invitations, and removes members
   await page.route("**/api/workspaces**", async (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
-    if (method === "GET") {
+    if (method === "GET" && url.pathname === "/api/workspaces") {
       return route.fulfill({ status: 200, json: { workspaces: [workspace] } });
+    }
+    if (method === "GET" && url.pathname.endsWith("/projects")) {
+      return route.fulfill({ status: 200, json: { projects: [] } });
     }
     if (method === "POST" && url.pathname.endsWith("/invitations")) {
       const { email } = route.request().postDataJSON();
@@ -219,6 +225,186 @@ test("workspace owner invites by email, revokes invitations, and removes members
   await expect(page.getByText("Grace Hopper", { exact: true })).toHaveCount(0);
 });
 
+test("workspace members manage projects and Kanban tasks without crossing workspaces", async ({
+  page,
+}) => {
+  const workspace = {
+    id: "workspace-1",
+    name: "Analytical Engine",
+    owner: "owner-1",
+    members: [
+      {
+        id: "owner-1",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        email: "ada@example.com",
+        role: "owner",
+      },
+      {
+        id: "member-1",
+        firstName: "Grace",
+        lastName: "Hopper",
+        email: "grace@example.com",
+        role: "member",
+      },
+    ],
+    invitations: [],
+  };
+  let project = null;
+  let task = null;
+  await page.route("**/api/auth/me", (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        user: {
+          id: "owner-1",
+          firstName: "Ada",
+          lastName: "Lovelace",
+          email: "ada@example.com",
+        },
+      },
+    }),
+  );
+  await page.route("**/api/workspaces**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    if (url.pathname === "/api/workspaces" && method === "GET") {
+      return route.fulfill({ status: 200, json: { workspaces: [workspace] } });
+    }
+    if (url.pathname === "/api/workspaces/other-workspace/projects") {
+      return route.fulfill({
+        status: 404,
+        json: { error: "Workspace not found." },
+      });
+    }
+    if (url.pathname === "/api/workspaces/workspace-1/projects") {
+      if (method === "GET") {
+        return route.fulfill({
+          status: 200,
+          json: { projects: project ? [project] : [] },
+        });
+      }
+      if (method === "POST") {
+        project = {
+          id: "project-1",
+          name: route.request().postDataJSON().name,
+          description: route.request().postDataJSON().description,
+        };
+        return route.fulfill({ status: 201, json: { project } });
+      }
+    }
+    if (
+      url.pathname === "/api/workspaces/workspace-1/projects/project-1" &&
+      method === "PATCH"
+    ) {
+      project = { ...project, ...route.request().postDataJSON() };
+      return route.fulfill({ status: 200, json: { project } });
+    }
+    if (
+      url.pathname === "/api/workspaces/workspace-1/projects/project-1" &&
+      method === "DELETE"
+    ) {
+      project = null;
+      task = null;
+      return route.fulfill({
+        status: 200,
+        json: { message: "Project deleted." },
+      });
+    }
+    if (
+      url.pathname === "/api/workspaces/workspace-1/projects/project-1/tasks"
+    ) {
+      if (method === "GET") {
+        return route.fulfill({
+          status: 200,
+          json: { tasks: task ? [task] : [] },
+        });
+      }
+      if (method === "POST") {
+        task = {
+          id: "task-1",
+          ...route.request().postDataJSON(),
+          status: "Backlog",
+        };
+        return route.fulfill({ status: 201, json: { task } });
+      }
+    }
+    if (
+      url.pathname ===
+        "/api/workspaces/workspace-1/projects/project-1/tasks/task-1" &&
+      method === "PATCH"
+    ) {
+      task = { ...task, ...route.request().postDataJSON() };
+      return route.fulfill({ status: 200, json: { task } });
+    }
+    if (
+      url.pathname ===
+        "/api/workspaces/workspace-1/projects/project-1/tasks/task-1" &&
+      method === "DELETE"
+    ) {
+      task = null;
+      return route.fulfill({ status: 200, json: { message: "Task deleted." } });
+    }
+    return route.fulfill({
+      status: 404,
+      json: { error: "Unexpected request." },
+    });
+  });
+
+  await page.goto("/");
+  await expect(
+    page.getByText("No projects yet. Create a project to get started."),
+  ).toBeVisible();
+  await page.getByLabel("Project name").fill("Website");
+  await page.getByLabel("Project description").fill("Launch the new site");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(
+    page.getByRole("button", { name: "Website", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Edit Website" }).click();
+  await page.getByLabel("Project name").fill("Marketing Website");
+  await page.getByRole("button", { name: "Save project" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Marketing Website" }),
+  ).toBeVisible();
+
+  await page.getByLabel("New task title").fill("Build home page");
+  await page.getByLabel("New task description").fill("Create the landing page");
+  await page.getByLabel("New task assignee").selectOption("member-1");
+  await page.getByLabel("New task due date").fill("2026-12-01");
+  await page.getByRole("button", { name: "Add task" }).click();
+  const taskTitle = page.getByLabel("Task title", { exact: true });
+  await expect(taskTitle).toHaveValue("Build home page");
+  await expect(page.getByText("Assigned to Grace Hopper")).toBeVisible();
+  await expect(page.getByLabel("Due date", { exact: true })).toHaveValue(
+    "2026-12-01",
+  );
+  await page.getByLabel("Task status", { exact: true }).selectOption("Todo");
+  await page.getByRole("button", { name: "Save task" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Todo tasks" })
+      .getByLabel("Task title", { exact: true }),
+  ).toHaveValue("Build home page");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expect(page.getByLabel("Task title", { exact: true })).toHaveCount(0);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete Marketing Website" }).click();
+  await expect(
+    page.getByText("No projects yet. Create a project to get started."),
+  ).toBeVisible();
+
+  const deniedStatus = await page.evaluate(async () => {
+    const response = await fetch("/api/workspaces/other-workspace/projects");
+    return response.status;
+  });
+  expect(deniedStatus).toBe(404);
+});
+
 test("signed-in invitee accepts invitation link", async ({ page }) => {
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
@@ -242,6 +428,9 @@ test("signed-in invitee accepts invitation link", async ({ page }) => {
         status: 200,
         json: { message: "Workspace invitation accepted." },
       });
+    }
+    if (url.pathname.endsWith("/projects")) {
+      return route.fulfill({ status: 200, json: { projects: [] } });
     }
     return route.fulfill({
       status: 200,

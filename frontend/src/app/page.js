@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import WorkspaceProjects from "./WorkspaceProjects";
 
 const apiOrigin = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -275,8 +276,16 @@ export default function Home() {
   const isAccountForm = ["login", "signup", "forgot", "reset"].includes(mode);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
-      <section className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl sm:p-10">
+    <main
+      className={`flex min-h-screen justify-center bg-slate-950 px-4 text-slate-100 ${
+        user ? "items-start py-8" : "items-center py-10"
+      }`}
+    >
+      <section
+        className={`w-full rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl sm:p-10 ${
+          user ? "max-w-7xl" : "max-w-lg"
+        }`}
+      >
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
           PM Studio
         </p>
@@ -421,6 +430,10 @@ export default function Home() {
                           </div>
                         </>
                       )}
+                      <WorkspaceProjects
+                        request={request}
+                        workspace={workspace}
+                      />
                     </li>
                   ))}
                 </ul>

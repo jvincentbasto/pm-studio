@@ -17,8 +17,10 @@ The SMTP settings can use any compatible mail service. Keep secrets in local env
 
 Workspace owners can invite members from the workspace list. Invitation links expire after seven days; invitees must sign in with the invited, verified email address to accept. Owners can revoke pending invitations or remove members from the same view.
 
+Workspace members can create projects in their workspace and manage project tasks on a four-column Kanban board. Tasks support workspace-member assignment and optional due dates; project and task access is scoped to the current workspace.
+
 ## Checks
 
 - Backend account and workspace tests: `npm test --prefix backend`
-- Browser signup-to-workspace test: `npm run test:e2e --prefix frontend`
+- Browser account, invitation, project, and Kanban tests: `npm run test:e2e --prefix frontend`
 - Frontend production build: `npm run build --prefix frontend`
