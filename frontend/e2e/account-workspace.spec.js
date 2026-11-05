@@ -405,6 +405,133 @@ test("workspace members manage projects and Kanban tasks without crossing worksp
   expect(deniedStatus).toBe(404);
 });
 
+test("guest verifies email, uses seeded data, and upgrades without losing it", async ({
+  page,
+}) => {
+  const guest = {
+    id: "guest-1",
+    firstName: "Guest",
+    lastName: "Member",
+    email: "demo@example.com",
+    accountType: "guest",
+    guestExpiresAt: "2026-11-09T00:00:00.000Z",
+  };
+  const workspace = {
+    id: "guest-workspace",
+    name: "Guest Workspace",
+    owner: "guest-1",
+    members: [{ id: "guest-1", firstName: "Guest", role: "owner" }],
+    invitations: [],
+  };
+  const project = {
+    id: "sample-project",
+    name: "Sample Project",
+    description: "Explore your guest workspace with this sample task.",
+  };
+  const task = {
+    id: "sample-task",
+    title: "Explore the Kanban board",
+    description: "Move this task through the four workflow columns.",
+    status: "Backlog",
+    assignee: null,
+    dueDate: null,
+  };
+  let guestEmail;
+  await page.route("**/api/auth/me", (route) =>
+    route.fulfill({
+      status: 401,
+      json: { error: "Authentication required." },
+    }),
+  );
+  await page.route("**/api/guest/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/guest/start") {
+      guestEmail = route.request().postDataJSON().email;
+      return route.fulfill({
+        status: 200,
+        json: { message: "Check your email for a guest link." },
+      });
+    }
+    if (url.pathname === "/api/guest/verify") {
+      expect(route.request().postDataJSON().token).toBe("guest-token");
+      return route.fulfill({
+        status: 200,
+        json: { message: "Guest account ready.", user: guest },
+      });
+    }
+    if (url.pathname === "/api/guest/upgrade") {
+      const { firstName, lastName } = route.request().postDataJSON();
+      guest.firstName = firstName;
+      guest.lastName = lastName;
+      guest.accountType = "regular";
+      delete guest.guestExpiresAt;
+      return route.fulfill({
+        status: 200,
+        json: { message: "Guest account upgraded.", user: guest },
+      });
+    }
+    return route.fulfill({ status: 404, json: { error: "Not found." } });
+  });
+  await page.route("**/api/workspaces**", async (route) => {
+    const url = new URL(route.request().url());
+    if (
+      url.pathname === "/api/workspaces" &&
+      route.request().method() === "GET"
+    ) {
+      return route.fulfill({ status: 200, json: { workspaces: [workspace] } });
+    }
+    if (url.pathname === "/api/workspaces/guest-workspace/projects") {
+      return route.fulfill({ status: 200, json: { projects: [project] } });
+    }
+    if (
+      url.pathname ===
+      "/api/workspaces/guest-workspace/projects/sample-project/tasks"
+    ) {
+      return route.fulfill({ status: 200, json: { tasks: [task] } });
+    }
+    return route.fulfill({ status: 404, json: { error: "Not found." } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Try a guest account" }).click();
+  await page.getByLabel("Email").fill("demo@example.com");
+  await page.getByRole("button", { name: "Email me a guest link" }).click();
+  await expect(page.getByRole("status")).toContainText("Check your email");
+  expect(guestEmail).toBe("demo@example.com");
+
+  await page.goto("/?guest=guest-token");
+  await expect(page.getByText("Guest demo")).toBeVisible();
+  await expect(page.getByText(/Your data is removed after/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Guest Workspace" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Sample Project", exact: true })
+    .click();
+  await expect(page.getByLabel("Task title", { exact: true })).toHaveValue(
+    "Explore the Kanban board",
+  );
+  await expect(
+    page.getByRole("region", { name: "Backlog tasks" }),
+  ).toBeVisible();
+
+  await page.getByLabel("First name", { exact: true }).fill("Ada");
+  await page.getByLabel("Last name", { exact: true }).fill("Lovelace");
+  await page.getByLabel("Set a password").fill("correct horse battery");
+  await page.getByRole("button", { name: "Upgrade and keep my data" }).click();
+
+  await expect(page.getByText("Guest demo")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Guest Workspace" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Task title", { exact: true })).toHaveValue(
+    "Explore the Kanban board",
+  );
+  await expect(page.getByRole("status")).toContainText(
+    "Guest account upgraded",
+  );
+});
+
 test("signed-in invitee accepts invitation link", async ({ page }) => {
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({

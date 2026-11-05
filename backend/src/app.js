@@ -6,6 +6,7 @@ import { config } from "./lib/config.js";
 import authRoutes from "./routes/auth.route.js";
 import workspaceRoutes from "./routes/workspace.route.js";
 import projectRoutes from "./routes/project.route.js";
+import guestRoutes from "./routes/guest.route.js";
 
 const app = express();
 
@@ -55,5 +56,6 @@ app.get("/api", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/workspaces", projectRoutes);
+app.use("/api/guest", guestRoutes);
 
 export default app;

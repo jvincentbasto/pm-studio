@@ -31,6 +31,8 @@ export default function Home() {
   const [mode, setMode] = useState("login");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [upgradeFirstName, setUpgradeFirstName] = useState("");
+  const [upgradeLastName, setUpgradeLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [resetToken, setResetToken] = useState("");
@@ -79,6 +81,7 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     const url = new URL(window.location.href);
+    const guestToken = url.searchParams.get("guest");
     const verificationToken = url.searchParams.get("verify");
     const requestedResetToken = url.searchParams.get("reset");
     const inviteToken =
@@ -90,7 +93,30 @@ export default function Home() {
       setPendingInviteToken(inviteToken);
     }
 
-    if (requestedResetToken) {
+    if (guestToken) {
+      setBusy(true);
+      request("/api/guest/verify", {
+        method: "POST",
+        body: JSON.stringify({ token: guestToken }),
+      })
+        .then(async ({ user: guestUser, message: guestMessage }) => {
+          if (!active) return;
+          setUser(guestUser);
+          setMode("workspace");
+          setMessage({ type: "success", text: guestMessage });
+          url.searchParams.delete("guest");
+          window.history.replaceState({}, "", url);
+          const { workspaces: currentWorkspaces } =
+            await request("/api/workspaces");
+          if (active) setWorkspaces(currentWorkspaces);
+        })
+        .catch((error) => {
+          if (active) setMessage({ type: "error", text: error.message });
+        })
+        .finally(() => {
+          if (active) setBusy(false);
+        });
+    } else if (requestedResetToken) {
       setResetToken(requestedResetToken);
       setMode("reset");
     } else if (verificationToken) {
@@ -177,6 +203,13 @@ export default function Home() {
           method: "POST",
           body: JSON.stringify({ email }),
         });
+        setMessage({ type: "success", text: body.message });
+      } else if (mode === "guest" || mode === "guest-verification") {
+        const body = await request("/api/guest/start", {
+          method: "POST",
+          body: JSON.stringify({ email }),
+        });
+        setMode("guest-verification");
         setMessage({ type: "success", text: body.message });
       } else if (mode === "forgot") {
         const body = await request("/api/auth/forgot-password", {
@@ -268,6 +301,34 @@ export default function Home() {
     }
   }
 
+  async function upgradeGuest(event) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { user: upgradedUser, message: successMessage } = await request(
+        "/api/guest/upgrade",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            firstName: upgradeFirstName,
+            lastName: upgradeLastName,
+            password,
+          }),
+        },
+      );
+      setUser(upgradedUser);
+      setPassword("");
+      setUpgradeFirstName("");
+      setUpgradeLastName("");
+      setMessage({ type: "success", text: successMessage });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function signOut() {
     window.location.assign(`${apiOrigin}/api/auth/logout`);
   }
@@ -308,6 +369,88 @@ export default function Home() {
                 Sign out
               </button>
             </div>
+
+            {user.accountType === "guest" && (
+              <section className="space-y-4 rounded-xl border border-amber-400/40 bg-amber-950/20 p-4">
+                <div>
+                  <h2 className="font-semibold text-amber-200">Guest demo</h2>
+                  <p className="mt-1 text-sm text-slate-300">
+                    Your data is removed after{" "}
+                    {new Date(user.guestExpiresAt).toLocaleString()}. Upgrade
+                    before then to keep your workspace, projects, and tasks.
+                  </p>
+                </div>
+                <form
+                  className="grid gap-3 md:grid-cols-2"
+                  onSubmit={upgradeGuest}
+                >
+                  <div>
+                    <label
+                      className="mb-1 block text-sm font-medium"
+                      htmlFor="upgrade-first-name"
+                    >
+                      First name
+                    </label>
+                    <input
+                      autoComplete="given-name"
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
+                      id="upgrade-first-name"
+                      maxLength={80}
+                      onChange={(event) =>
+                        setUpgradeFirstName(event.target.value)
+                      }
+                      required
+                      value={upgradeFirstName}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="mb-1 block text-sm font-medium"
+                      htmlFor="upgrade-last-name"
+                    >
+                      Last name
+                    </label>
+                    <input
+                      autoComplete="family-name"
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
+                      id="upgrade-last-name"
+                      maxLength={80}
+                      onChange={(event) =>
+                        setUpgradeLastName(event.target.value)
+                      }
+                      required
+                      value={upgradeLastName}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="mb-1 block text-sm font-medium"
+                      htmlFor="upgrade-password"
+                    >
+                      Set a password
+                    </label>
+                    <input
+                      autoComplete="new-password"
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
+                      id="upgrade-password"
+                      maxLength={72}
+                      minLength={8}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      type="password"
+                      value={password}
+                    />
+                  </div>
+                  <button
+                    className="self-end rounded-lg bg-cyan-300 px-4 py-2.5 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-60"
+                    disabled={busy}
+                    type="submit"
+                  >
+                    Upgrade and keep my data
+                  </button>
+                </form>
+              </section>
+            )}
 
             <div className="space-y-3">
               <h2 className="text-lg font-semibold">Your workspaces</h2>
@@ -357,79 +500,80 @@ export default function Home() {
                         </ul>
                       </div>
 
-                      {workspace.owner === user.id && (
-                        <>
-                          <form
-                            className="flex flex-col gap-2 sm:flex-row"
-                            onSubmit={(event) =>
-                              inviteMember(event, workspace.id)
-                            }
-                          >
-                            <label
-                              className="sr-only"
-                              htmlFor={`invite-${workspace.id}`}
-                            >
-                              Invite email for {workspace.name}
-                            </label>
-                            <input
-                              className="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
-                              id={`invite-${workspace.id}`}
-                              maxLength={254}
-                              onChange={(event) =>
-                                setInviteEmails((current) => ({
-                                  ...current,
-                                  [workspace.id]: event.target.value,
-                                }))
+                      {workspace.owner === user.id &&
+                        user.accountType !== "guest" && (
+                          <>
+                            <form
+                              className="flex flex-col gap-2 sm:flex-row"
+                              onSubmit={(event) =>
+                                inviteMember(event, workspace.id)
                               }
-                              required
-                              type="email"
-                              value={inviteEmails[workspace.id] ?? ""}
-                            />
-                            <button
-                              className="rounded-lg bg-cyan-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-60"
-                              disabled={busy}
-                              type="submit"
                             >
-                              Send invitation
-                            </button>
-                          </form>
+                              <label
+                                className="sr-only"
+                                htmlFor={`invite-${workspace.id}`}
+                              >
+                                Invite email for {workspace.name}
+                              </label>
+                              <input
+                                className="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
+                                id={`invite-${workspace.id}`}
+                                maxLength={254}
+                                onChange={(event) =>
+                                  setInviteEmails((current) => ({
+                                    ...current,
+                                    [workspace.id]: event.target.value,
+                                  }))
+                                }
+                                required
+                                type="email"
+                                value={inviteEmails[workspace.id] ?? ""}
+                              />
+                              <button
+                                className="rounded-lg bg-cyan-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-60"
+                                disabled={busy}
+                                type="submit"
+                              >
+                                Send invitation
+                              </button>
+                            </form>
 
-                          <div>
-                            <h4 className="text-sm font-medium">
-                              Pending invitations
-                            </h4>
-                            {workspace.invitations.length ? (
-                              <ul className="mt-2 space-y-2 text-sm text-slate-300">
-                                {workspace.invitations.map((invitation) => (
-                                  <li
-                                    className="flex items-center justify-between gap-3"
-                                    key={invitation.id}
-                                  >
-                                    <span>{invitation.email}</span>
-                                    <button
-                                      className="text-xs text-rose-300 underline underline-offset-2"
-                                      disabled={busy}
-                                      onClick={() =>
-                                        revokeInvitation(
-                                          workspace.id,
-                                          invitation.id,
-                                        )
-                                      }
-                                      type="button"
+                            <div>
+                              <h4 className="text-sm font-medium">
+                                Pending invitations
+                              </h4>
+                              {workspace.invitations.length ? (
+                                <ul className="mt-2 space-y-2 text-sm text-slate-300">
+                                  {workspace.invitations.map((invitation) => (
+                                    <li
+                                      className="flex items-center justify-between gap-3"
+                                      key={invitation.id}
                                     >
-                                      Revoke invitation
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="mt-2 text-sm text-slate-400">
-                                No pending invitations.
-                              </p>
-                            )}
-                          </div>
-                        </>
-                      )}
+                                      <span>{invitation.email}</span>
+                                      <button
+                                        className="text-xs text-rose-300 underline underline-offset-2"
+                                        disabled={busy}
+                                        onClick={() =>
+                                          revokeInvitation(
+                                            workspace.id,
+                                            invitation.id,
+                                          )
+                                        }
+                                        type="button"
+                                      >
+                                        Revoke invitation
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="mt-2 text-sm text-slate-400">
+                                  No pending invitations.
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        )}
                       <WorkspaceProjects
                         request={request}
                         workspace={workspace}
@@ -444,28 +588,33 @@ export default function Home() {
               )}
             </div>
 
-            <form className="space-y-3" onSubmit={submit}>
-              <label className="block text-sm font-medium" htmlFor="workspace">
-                Workspace name
-              </label>
-              <input
-                autoComplete="organization"
-                className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
-                id="workspace"
-                maxLength={80}
-                minLength={2}
-                onChange={(event) => setWorkspaceName(event.target.value)}
-                required
-                value={workspaceName}
-              />
-              <button
-                className="w-full rounded-lg bg-cyan-300 px-4 py-2.5 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-60"
-                disabled={busy}
-                type="submit"
-              >
-                Create workspace
-              </button>
-            </form>
+            {user.accountType !== "guest" && (
+              <form className="space-y-3" onSubmit={submit}>
+                <label
+                  className="block text-sm font-medium"
+                  htmlFor="workspace"
+                >
+                  Workspace name
+                </label>
+                <input
+                  autoComplete="organization"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/30"
+                  id="workspace"
+                  maxLength={80}
+                  minLength={2}
+                  onChange={(event) => setWorkspaceName(event.target.value)}
+                  required
+                  value={workspaceName}
+                />
+                <button
+                  className="w-full rounded-lg bg-cyan-300 px-4 py-2.5 font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-60"
+                  disabled={busy}
+                  type="submit"
+                >
+                  Create workspace
+                </button>
+              </form>
+            )}
           </div>
         ) : (
           <>
@@ -475,6 +624,8 @@ export default function Home() {
               {mode === "verification" && "Verify your email"}
               {mode === "forgot" && "Recover your account"}
               {mode === "reset" && "Choose a new password"}
+              {mode === "guest" && "Start a guest account"}
+              {mode === "guest-verification" && "Check your email"}
             </h1>
             <p className="mt-2 text-sm leading-6 text-slate-300">
               {mode === "signup" &&
@@ -489,6 +640,10 @@ export default function Home() {
                 "If your account exists, we’ll email a password reset link."}
               {mode === "reset" &&
                 "Use at least eight characters and no more than 72 UTF-8 bytes."}
+              {mode === "guest" &&
+                "Try the project workspace with an email-verified account. Your demo data lasts three days."}
+              {mode === "guest-verification" &&
+                "Open the link we sent to verify your email and start your guest workspace."}
             </p>
 
             <form className="mt-8 space-y-4" onSubmit={submit}>
@@ -608,7 +763,11 @@ export default function Home() {
                         ? "Resend verification email"
                         : mode === "forgot"
                           ? "Send reset link"
-                          : "Reset password"}
+                          : mode === "guest"
+                            ? "Email me a guest link"
+                            : mode === "guest-verification"
+                              ? "Resend guest link"
+                              : "Reset password"}
               </button>
             </form>
 
@@ -644,7 +803,33 @@ export default function Home() {
               </button>
             )}
 
+            {(mode === "login" || mode === "signup") && (
+              <button
+                className="mt-3 w-full text-sm text-cyan-300 underline underline-offset-4 hover:text-cyan-200"
+                onClick={() => {
+                  setMode("guest");
+                  setMessage(null);
+                }}
+                type="button"
+              >
+                Try a guest account
+              </button>
+            )}
+
             {mode === "verification" && (
+              <button
+                className="mt-5 w-full text-sm text-slate-300 underline underline-offset-4 hover:text-white"
+                onClick={() => {
+                  setMode("login");
+                  setMessage(null);
+                }}
+                type="button"
+              >
+                Back to sign in
+              </button>
+            )}
+
+            {(mode === "guest" || mode === "guest-verification") && (
               <button
                 className="mt-5 w-full text-sm text-slate-300 underline underline-offset-4 hover:text-white"
                 onClick={() => {

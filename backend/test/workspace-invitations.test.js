@@ -126,6 +126,30 @@ test("non-owners cannot create workspace invitations", async () => {
   assert.equal(userLookedUp, false);
 });
 
+test("guest accounts cannot create workspaces or invite members", async () => {
+  let workspaceQueried = false;
+  const controller = createWorkspaceController({
+    WorkspaceModel: {
+      create: async () => assert.fail("guests cannot create workspaces"),
+      findOne: async () => {
+        workspaceQueried = true;
+      },
+    },
+  });
+  const res = createResponse();
+  const guestRequest = {
+    user: { _id: "guest-1", accountType: "guest" },
+    params: { workspaceId: "workspace-1" },
+    body: { name: "Another workspace", email: "member@example.com" },
+  };
+
+  await controller.create(guestRequest, res);
+  assert.equal(res.statusCode, 403);
+  await controller.invite(guestRequest, res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(workspaceQueried, false);
+});
+
 test("workspace invitation returns failure and deletes the unsent invitation when email fails", async () => {
   const workspace = {
     _id: "workspace-1",

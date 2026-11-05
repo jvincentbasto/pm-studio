@@ -45,6 +45,16 @@ export const emailService = {
       action: "Verify your email",
       linkLabel: "PM Studio",
     }),
+  sendGuestVerificationEmail: (user, token) =>
+    sendLink({
+      email: user.email,
+      path: "/",
+      parameter: "guest",
+      token,
+      subject: "Start your PM Studio guest account",
+      action: "Verify your email to start your guest account",
+      linkLabel: "Start your guest account",
+    }),
   sendPasswordResetEmail: (user, token) =>
     sendLink({
       email: user.email,

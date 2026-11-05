@@ -1,4 +1,9 @@
 import Project from "../models/Project.js";
+import Workspace from "../models/Workspace.js";
+import {
+  releaseGuestResource,
+  reserveGuestResource,
+} from "../lib/guest-limits.js";
 
 const validProject = ({ name, description }) =>
   typeof name === "string" &&
@@ -15,7 +20,10 @@ const validProjectUpdate = ({ name, description }) =>
   (description === undefined ||
     (typeof description === "string" && description.length <= 1000));
 
-export const createProjectController = ({ ProjectModel = Project } = {}) => {
+export const createProjectController = ({
+  ProjectModel = Project,
+  WorkspaceModel = Workspace,
+} = {}) => {
   const list = async (req, res) => {
     try {
       const projects = await ProjectModel.find({
@@ -36,7 +44,23 @@ export const createProjectController = ({ ProjectModel = Project } = {}) => {
       });
     }
 
+    let reserved = false;
     try {
+      if (req.user.accountType === "guest") {
+        if (
+          !(await reserveGuestResource(
+            WorkspaceModel,
+            req.workspace._id,
+            "guestProjectCount",
+          ))
+        ) {
+          return res.status(429).json({
+            error: "Guest limit reached: 10 projects. Upgrade to keep going.",
+          });
+        }
+        reserved = true;
+      }
+
       const project = await ProjectModel.create({
         workspace: req.workspace._id,
         name: name.trim(),
@@ -44,6 +68,13 @@ export const createProjectController = ({ ProjectModel = Project } = {}) => {
       });
       return res.status(201).json({ project });
     } catch (error) {
+      if (reserved) {
+        await releaseGuestResource(
+          WorkspaceModel,
+          req.workspace._id,
+          "guestProjectCount",
+        );
+      }
       console.error("Could not create project.", error?.name);
       return res.status(500).json({ error: "Could not create the project." });
     }
@@ -83,12 +114,27 @@ export const createProjectController = ({ ProjectModel = Project } = {}) => {
 
   const remove = async (req, res) => {
     try {
-      const result = await ProjectModel.deleteOne({
+      const project = await ProjectModel.findOneAndDelete({
         _id: req.params.projectId,
         workspace: req.workspace._id,
       });
-      if (!result.deletedCount) {
+      if (!project) {
         return res.status(404).json({ error: "Project not found." });
+      }
+      if (req.user.accountType === "guest") {
+        await Promise.all([
+          releaseGuestResource(
+            WorkspaceModel,
+            req.workspace._id,
+            "guestProjectCount",
+          ),
+          releaseGuestResource(
+            WorkspaceModel,
+            req.workspace._id,
+            "guestTaskCount",
+            project.tasks.length,
+          ),
+        ]);
       }
       return res.status(200).json({ message: "Project deleted." });
     } catch (error) {

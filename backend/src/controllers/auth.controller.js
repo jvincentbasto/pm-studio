@@ -41,13 +41,28 @@ const reportError = (message, error) => {
   console.error(message, error?.name ?? "Unknown error");
 };
 
-const issueSession = ({ user, res, jwtSecret, nodeEnv, redirectTo }) => {
+export const authUserResponse = (user) => ({
+  id: String(user._id),
+  firstName: user.firstName,
+  lastName: user.lastName,
+  email: user.email,
+  accountType: user.accountType ?? "regular",
+  ...(user.accountType === "guest" &&
+    user.guestExpiresAt && {
+      guestExpiresAt: user.guestExpiresAt,
+    }),
+});
+
+export const issueSession = ({ user, res, jwtSecret, nodeEnv, redirectTo }) => {
   if (!jwtSecret) {
     throw new Error("JWT_SECRET_KEY is not configured.");
   }
 
   const token = jwt.sign(
-    { tokenVersion: user.tokenVersion ?? 0 },
+    {
+      tokenVersion: user.tokenVersion ?? 0,
+      accountType: user.accountType ?? "regular",
+    },
     jwtSecret,
     { subject: String(user._id), expiresIn: "7d" },
   );
@@ -58,12 +73,7 @@ const issueSession = ({ user, res, jwtSecret, nodeEnv, redirectTo }) => {
   }
 
   return res.status(200).json({
-    user: {
-      id: String(user._id),
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-    },
+    user: authUserResponse(user),
   });
 };
 
@@ -71,6 +81,30 @@ const normalizeName = (value, fallback = "User") => {
   const normalized = typeof value === "string" ? value.trim() : "";
   return normalized.slice(0, 80) || fallback;
 };
+
+const upgradeGuestWithProvider = (UserModel, user, providerEntry, names = {}) =>
+  UserModel.findOneAndUpdate(
+    {
+      _id: user._id,
+      accountType: "guest",
+      emailVerified: true,
+      guestExpiresAt: { $gt: new Date() },
+    },
+    {
+      $set: {
+        accountType: "regular",
+        firstName: names.firstName ?? user.firstName,
+        lastName: names.lastName ?? user.lastName,
+      },
+      $unset: {
+        guestExpiresAt: 1,
+        guestTokenHash: 1,
+        guestTokenExpiresAt: 1,
+      },
+      $push: { authProviders: providerEntry },
+    },
+    { new: true, runValidators: true },
+  );
 
 export const createAuthController = ({
   UserModel = User,
@@ -273,6 +307,21 @@ export const createAuthController = ({
       if (normalizeEmail(linkedUser.email) !== email) {
         throw new Error("This identity is already linked to another account.");
       }
+      if (linkedUser.accountType === "guest") {
+        const upgradedGuest = await upgradeGuestWithProvider(
+          UserModel,
+          linkedUser,
+          providerEntry,
+        );
+        if (!upgradedGuest) throw new Error("Guest access has expired.");
+        return issueSession({
+          user: upgradedGuest,
+          res,
+          jwtSecret,
+          nodeEnv,
+          redirectTo: config.envs.appUrl,
+        });
+      }
       return issueSession({
         user: linkedUser,
         res,
@@ -287,6 +336,25 @@ export const createAuthController = ({
     const accountWithEmail = await UserModel.findOne({ email });
 
     if (accountWithEmail) {
+      if (accountWithEmail.accountType === "guest") {
+        const upgradedGuest = await upgradeGuestWithProvider(
+          UserModel,
+          accountWithEmail,
+          providerEntry,
+          {
+            firstName: accountWithEmail.firstName || firstName,
+            lastName: accountWithEmail.lastName || lastName,
+          },
+        );
+        if (!upgradedGuest) throw new Error("Guest access has expired.");
+        return issueSession({
+          user: upgradedGuest,
+          res,
+          jwtSecret,
+          nodeEnv,
+          redirectTo: config.envs.appUrl,
+        });
+      }
       accountWithEmail.emailVerified = true;
       accountWithEmail.firstName ||= firstName;
       accountWithEmail.lastName ||= lastName;
@@ -393,12 +461,7 @@ export const createAuthController = ({
 
   const currentUser = async (req, res) =>
     res.status(200).json({
-      user: {
-        id: String(req.user._id),
-        firstName: req.user.firstName,
-        lastName: req.user.lastName,
-        email: req.user.email,
-      },
+      user: authUserResponse(req.user),
     });
 
   return {

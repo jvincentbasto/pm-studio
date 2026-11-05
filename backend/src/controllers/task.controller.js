@@ -1,4 +1,9 @@
 import Project from "../models/Project.js";
+import Workspace from "../models/Workspace.js";
+import {
+  releaseGuestResource,
+  reserveGuestResource,
+} from "../lib/guest-limits.js";
 
 const statuses = ["Backlog", "Todo", "In Progress", "Done"];
 const validTaskFields = ({ title, description, status, dueDate }) =>
@@ -29,7 +34,10 @@ const normalizeTask = (task) => ({
   dueDate: task.dueDate ?? null,
 });
 
-export const createTaskController = ({ ProjectModel = Project } = {}) => {
+export const createTaskController = ({
+  ProjectModel = Project,
+  WorkspaceModel = Workspace,
+} = {}) => {
   const list = async (req, res) => {
     try {
       const project = await ProjectModel.findOne(projectFilter(req))
@@ -57,7 +65,23 @@ export const createTaskController = ({ ProjectModel = Project } = {}) => {
         .json({ error: "Assignee must belong to this workspace." });
     }
 
+    let reserved = false;
     try {
+      if (req.user.accountType === "guest") {
+        if (
+          !(await reserveGuestResource(
+            WorkspaceModel,
+            req.workspace._id,
+            "guestTaskCount",
+          ))
+        ) {
+          return res.status(429).json({
+            error: "Guest limit reached: 10 tasks. Upgrade to keep going.",
+          });
+        }
+        reserved = true;
+      }
+
       const updatedProject = await ProjectModel.findOneAndUpdate(
         projectFilter(req),
         {
@@ -77,10 +101,24 @@ export const createTaskController = ({ ProjectModel = Project } = {}) => {
       );
       const task = updatedProject?.tasks.at(-1);
       if (!task) {
+        if (reserved) {
+          await releaseGuestResource(
+            WorkspaceModel,
+            req.workspace._id,
+            "guestTaskCount",
+          );
+        }
         return res.status(404).json({ error: "Project not found." });
       }
       return res.status(201).json({ task });
     } catch (error) {
+      if (reserved) {
+        await releaseGuestResource(
+          WorkspaceModel,
+          req.workspace._id,
+          "guestTaskCount",
+        );
+      }
       console.error("Could not create task.", error?.name);
       return res.status(500).json({ error: "Could not create the task." });
     }
@@ -148,6 +186,13 @@ export const createTaskController = ({ ProjectModel = Project } = {}) => {
         return res.status(404).json({ error: "Project not found." });
       }
       if (project.tasks.id(req.params.taskId)) {
+        if (req.user.accountType === "guest") {
+          await releaseGuestResource(
+            WorkspaceModel,
+            req.workspace._id,
+            "guestTaskCount",
+          );
+        }
         return res.status(200).json({ message: "Task deleted." });
       }
       return res.status(404).json({ error: "Task not found." });

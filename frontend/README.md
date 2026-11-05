@@ -19,6 +19,8 @@ Workspace owners can invite members from the workspace list. Invitation links ex
 
 Workspace members can create projects in their workspace and manage project tasks on a four-column Kanban board. Tasks support workspace-member assignment and optional due dates; project and task access is scoped to the current workspace.
 
+Visitors can start a Guest account by verifying an email link. Guest workspaces include sample project and task data, allow up to 10 projects and 10 tasks, and expire three days after email verification. Guests can set a password and name to upgrade without losing that data; expired Guest accounts are cleaned up every 15 minutes while the API is running.
+
 ## Checks
 
 - Backend account and workspace tests: `npm test --prefix backend`

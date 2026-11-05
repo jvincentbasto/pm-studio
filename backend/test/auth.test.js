@@ -282,6 +282,54 @@ test("Auth0 login links a verified provider identity to an existing account", as
   );
 });
 
+test("Auth0 login upgrades an active Guest account without changing its identity", async () => {
+  const guest = {
+    _id: "guest-1",
+    firstName: "Guest",
+    lastName: "Member",
+    email: "demo@example.com",
+    emailVerified: true,
+    accountType: "guest",
+    guestExpiresAt: new Date(Date.now() + 86400000),
+    authProviders: [],
+    save: async function () {
+      return this;
+    },
+  };
+  const controller = createAuthController({
+    UserModel: {
+      findOne: async (query) =>
+        query.email === "demo@example.com" ? guest : null,
+      findOneAndUpdate: async (_filter, update) => {
+        Object.assign(guest, update.$set);
+        delete guest.guestExpiresAt;
+        guest.authProviders.push(update.$push.authProviders);
+        return guest;
+      },
+    },
+    jwtSecret: "test-secret",
+    nodeEnv: "test",
+  });
+  const res = createResponse();
+
+  await controller.completeAuth0Login(
+    {
+      sub: "google-oauth2|guest-google",
+      email: guest.email,
+      email_verified: true,
+      given_name: "Ada",
+      family_name: "Lovelace",
+    },
+    res,
+  );
+
+  assert.equal(guest._id, "guest-1");
+  assert.equal(guest.accountType, "regular");
+  assert.equal(guest.guestExpiresAt, undefined);
+  assert.equal(guest.authProviders[0].provider, "google");
+  assert.equal(res.statusCode, 302);
+});
+
 test("Auth0 login rejects an identity linked to a different email", async () => {
   const otherUser = {
     _id: "user-other-1",
@@ -669,4 +717,45 @@ test("session middleware rejects unverified users", async () => {
 
   assert.equal(res.statusCode, 401);
   assert.equal(continued, false);
+});
+
+test("session middleware rejects expired guest accounts", async () => {
+  const token = jwt.sign({}, "test-secret", { subject: "guest-1" });
+  const middleware = createProtectRoute({
+    UserModel: {
+      findById: async () => ({
+        _id: "guest-1",
+        emailVerified: true,
+        accountType: "guest",
+        guestExpiresAt: new Date(Date.now() - 1000),
+      }),
+    },
+    jwtSecret: "test-secret",
+  });
+  const res = createResponse();
+  let continued = false;
+
+  await middleware({ cookies: { jwt: token } }, res, () => {
+    continued = true;
+  });
+
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.error, /guest access has expired/i);
+  assert.equal(continued, false);
+});
+
+test("session middleware explains when cleaned-up guest data is gone", async () => {
+  const token = jwt.sign({ accountType: "guest" }, "test-secret", {
+    subject: "guest-1",
+  });
+  const middleware = createProtectRoute({
+    UserModel: { findById: async () => null },
+    jwtSecret: "test-secret",
+  });
+  const res = createResponse();
+
+  await middleware({ cookies: { jwt: token } }, res, () => {});
+
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.error, /guest access has expired/i);
 });

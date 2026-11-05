@@ -67,9 +67,9 @@ test("project list and deletion stay scoped to the current workspace", async () 
         listFilter = filter;
         return { sort: async () => [{ _id: "project-1" }] };
       },
-      deleteOne: async (filter) => {
+      findOneAndDelete: async (filter) => {
         deleteFilter = filter;
-        return { deletedCount: 1 };
+        return { tasks: [] };
       },
     },
   });
@@ -125,6 +125,61 @@ test("project update rejects null values before writing", async () => {
 
   assert.equal(res.statusCode, 400);
   assert.equal(updated, false);
+});
+
+test("guest project creation stops at ten workspace projects", async () => {
+  let projectCreated = false;
+  const controller = createProjectController({
+    WorkspaceModel: {
+      findOneAndUpdate: async () => null,
+    },
+    ProjectModel: {
+      create: async () => {
+        projectCreated = true;
+      },
+    },
+  });
+  const res = createResponse();
+
+  await controller.create(
+    {
+      ...ownerRequest,
+      user: { ...ownerRequest.user, accountType: "guest" },
+      body: { name: "Another project" },
+    },
+    res,
+  );
+
+  assert.equal(res.statusCode, 429);
+  assert.match(res.body.error, /10 projects/i);
+  assert.equal(projectCreated, false);
+});
+
+test("deleting a guest project releases its project and task slots", async () => {
+  const updates = [];
+  const controller = createProjectController({
+    WorkspaceModel: {
+      updateOne: async (...args) => updates.push(args),
+    },
+    ProjectModel: {
+      findOneAndDelete: async () => ({ tasks: [{}, {}] }),
+    },
+  });
+  const res = createResponse();
+
+  await controller.remove(
+    {
+      ...ownerRequest,
+      user: { ...ownerRequest.user, accountType: "guest" },
+    },
+    res,
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(
+    updates.map(([, update]) => update.$inc),
+    [{ guestProjectCount: -1 }, { guestTaskCount: -2 }],
+  );
 });
 
 test("task creation uses project and workspace and accepts a workspace assignee", async () => {
@@ -195,6 +250,59 @@ test("task creation rejects assignees outside the workspace", async () => {
 
   assert.equal(res.statusCode, 400);
   assert.equal(taskCreated, false);
+});
+
+test("guest task creation stops at ten workspace tasks", async () => {
+  let taskCreated = false;
+  const controller = createTaskController({
+    WorkspaceModel: {
+      findOneAndUpdate: async () => null,
+    },
+    ProjectModel: {
+      findOneAndUpdate: async () => {
+        taskCreated = true;
+      },
+    },
+  });
+  const res = createResponse();
+
+  await controller.create(
+    {
+      ...ownerRequest,
+      user: { ...ownerRequest.user, accountType: "guest" },
+      body: { title: "Another task" },
+    },
+    res,
+  );
+
+  assert.equal(res.statusCode, 429);
+  assert.match(res.body.error, /10 tasks/i);
+  assert.equal(taskCreated, false);
+});
+
+test("deleting a guest task releases its task slot", async () => {
+  const updates = [];
+  const task = { _id: ownerRequest.params.taskId };
+  const controller = createTaskController({
+    WorkspaceModel: {
+      updateOne: async (...args) => updates.push(args),
+    },
+    ProjectModel: {
+      findOneAndUpdate: async () => ({ tasks: { id: () => task } }),
+    },
+  });
+  const res = createResponse();
+
+  await controller.remove(
+    {
+      ...ownerRequest,
+      user: { ...ownerRequest.user, accountType: "guest" },
+    },
+    res,
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(updates[0][1].$inc, { guestTaskCount: -1 });
 });
 
 test("task update scopes the task and rejects assignees outside the workspace", async () => {
@@ -308,13 +416,13 @@ test("task list, update, and deletion are scoped to the current project", async 
   assert.equal(deleteRes.statusCode, 200);
 });
 
-test("workspace access middleware denies non-members", async () => {
+test("workspace access middleware denies Guests that are not members", async () => {
   const middleware = createRequireWorkspaceMember({
     WorkspaceModel: {
       findOne: async (filter) => {
         assert.deepEqual(filter, {
           _id: ownerRequest.params.workspaceId,
-          "members.user": "000000000000000000000003",
+          "members.user": "guest-user",
         });
         return null;
       },
@@ -324,7 +432,7 @@ test("workspace access middleware denies non-members", async () => {
   let nextCalled = false;
 
   await middleware(
-    { ...ownerRequest, user: { _id: "000000000000000000000003" } },
+    { ...ownerRequest, user: { _id: "guest-user", accountType: "guest" } },
     res,
     () => {
       nextCalled = true;

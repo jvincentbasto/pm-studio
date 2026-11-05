@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { utils } from "./lib/utils.js";
 import { connectDB } from "./lib/db.js";
+import { cleanupExpiredGuests } from "./lib/guest-cleanup.js";
 import app from "./app.js";
 
 //
@@ -22,5 +23,12 @@ const PORT = process.env.PORT;
 app.listen(PORT, () => {
   // console.log("Environment", isProduction);
   console.log(`Server running on http://localhost:${PORT}`);
-  connectDB();
+  connectDB().then(() => {
+    const cleanup = () =>
+      cleanupExpiredGuests().catch((error) =>
+        console.error("Could not clean up expired guest accounts.", error?.name),
+      );
+    void cleanup();
+    setInterval(cleanup, 15 * 60 * 1000).unref();
+  });
 });
