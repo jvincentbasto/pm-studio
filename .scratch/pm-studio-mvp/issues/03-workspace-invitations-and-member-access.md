@@ -10,4 +10,3 @@
 - [ ] Owners can revoke pending invitations; revoked and expired links grant no access.
 - [ ] Accepted members can access only workspaces they belong to.
 - [ ] Owners can remove members, and removed members immediately lose workspace access.
-- [ ] Backend and browser tests cover invitation acceptance, expiry, revocation, and removal.

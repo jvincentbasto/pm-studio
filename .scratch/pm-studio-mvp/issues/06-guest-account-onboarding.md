@@ -10,4 +10,3 @@
 - [ ] Each Guest receives an isolated workspace with useful seeded project and task data.
 - [ ] Guests can create, view, edit, and delete their own projects and tasks.
 - [ ] Guest data is inaccessible to other Guests and regular users without authorization.
-- [ ] Backend and browser tests cover onboarding, core workflows, and isolation.

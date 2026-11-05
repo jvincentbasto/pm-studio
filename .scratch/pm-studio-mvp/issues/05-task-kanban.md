@@ -11,4 +11,3 @@
 - [ ] Tasks move among Backlog, Todo, In Progress, and Done.
 - [ ] The board shows each task under its current status and preserves status changes.
 - [ ] Invalid assignments and cross-workspace task access are rejected.
-- [ ] Backend and browser tests cover task workflows, assignment, status changes, and access control.

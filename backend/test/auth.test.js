@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import express from "express";
 import jwt from "jsonwebtoken";
 import { createAuthController } from "../src/controllers/auth.controller.js";
 import { createProtectRoute } from "../src/middlewares/auth.middleware.js";
 import { createWorkspaceController } from "../src/controllers/workspace.controller.js";
+import User from "../src/models/User.js";
+import authRoutes from "../src/routes/auth.route.js";
 
 const createResponse = () => ({
   statusCode: 200,
@@ -17,6 +20,11 @@ const createResponse = () => ({
   },
   json(body) {
     this.body = body;
+    return this;
+  },
+  redirect(url) {
+    this.redirectUrl = url;
+    this.statusCode = 302;
     return this;
   },
   cookie(name, value, options) {
@@ -190,6 +198,207 @@ test("signup creates an unverified account with a normalized email", async () =>
   assert.match(res.body.message, /verify/i);
 });
 
+test("Auth0 login creates a verified provider account for a new user", async () => {
+  let createdAttributes;
+  const controller = createAuthController({
+    UserModel: {
+      findOne: async () => null,
+      create: async (attributes) => {
+        createdAttributes = attributes;
+        return {
+          _id: "user-google-1",
+          ...attributes,
+        };
+      },
+    },
+    jwtSecret: "test-secret",
+    nodeEnv: "test",
+  });
+  const res = createResponse();
+
+  await controller.completeAuth0Login(
+    {
+      sub: "google-oauth2|google-123",
+      email: "grace@example.com",
+      email_verified: true,
+      given_name: "Grace",
+      family_name: "Hopper",
+    },
+    res,
+  );
+
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.redirectUrl, "http://localhost:3000");
+  assert.equal(createdAttributes.emailVerified, true);
+  assert.equal(createdAttributes.authProviders[0].provider, "google");
+  assert.equal(
+    createdAttributes.authProviders[0].providerId,
+    "google-oauth2|google-123",
+  );
+  assert.equal(jwt.verify(res.cookies[0].value, "test-secret").sub, "user-google-1");
+});
+
+test("Auth0 login links a verified provider identity to an existing account", async () => {
+  const user = {
+    _id: "user-existing-1",
+    firstName: "Ada",
+    lastName: "Lovelace",
+    email: "ada@example.com",
+    emailVerified: true,
+    authProviders: [],
+    save: async function () {
+      return this;
+    },
+  };
+  const controller = createAuthController({
+    UserModel: {
+      findOne: async (query) => {
+        if (query && query.email === "ada@example.com") return user;
+        return null;
+      },
+    },
+    jwtSecret: "test-secret",
+    nodeEnv: "test",
+  });
+  const res = createResponse();
+
+  await controller.completeAuth0Login(
+    {
+      sub: "google-oauth2|google-456",
+      email: "ada@example.com",
+      email_verified: true,
+      given_name: "Ada",
+      family_name: "Lovelace",
+    },
+    res,
+  );
+
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.redirectUrl, "http://localhost:3000");
+  assert.equal(user.authProviders[0].provider, "google");
+  assert.equal(
+    user.authProviders[0].providerId,
+    "google-oauth2|google-456",
+  );
+});
+
+test("Auth0 login rejects an identity linked to a different email", async () => {
+  const otherUser = {
+    _id: "user-other-1",
+    firstName: "Ada",
+    lastName: "Lovelace",
+    email: "other@example.com",
+    emailVerified: true,
+    authProviders: [
+      {
+        provider: "github",
+        providerId: "github-789",
+      },
+    ],
+  };
+  const controller = createAuthController({
+    UserModel: {
+      findOne: async (query) => {
+        if (
+          query?.authProviders?.$elemMatch?.provider === "github" &&
+          query.authProviders.$elemMatch.providerId === "github|github-789"
+        ) {
+          return otherUser;
+        }
+        return null;
+      },
+    },
+    jwtSecret: "test-secret",
+    nodeEnv: "test",
+  });
+  const res = createResponse();
+
+  await assert.rejects(
+    controller.completeAuth0Login(
+      {
+        sub: "github|github-789",
+        email: "ada@example.com",
+        email_verified: true,
+      },
+      res,
+    ),
+    { message: "This identity is already linked to another account." },
+  );
+});
+
+test("Auth0 login rejects unverified email before looking up an account", async () => {
+  let accountLookedUp = false;
+  const controller = createAuthController({
+    UserModel: {
+      findOne: async () => {
+        accountLookedUp = true;
+        return null;
+      },
+    },
+  });
+  const res = createResponse();
+
+  await assert.rejects(
+    controller.completeAuth0Login(
+      {
+        sub: "google-oauth2|unverified",
+        email: "ada@example.com",
+        email_verified: false,
+      },
+      res,
+    ),
+    { message: "Verify your email before signing in." },
+  );
+
+  assert.equal(accountLookedUp, false);
+  assert.equal(res.cookies.length, 0);
+});
+
+test("Google and GitHub routes start Auth0 login with their response context", async () => {
+  const loginOptions = [];
+  const app = express();
+  app.use((_req, res, next) => {
+    res.oidc = {
+      login: async (options) => {
+        loginOptions.push(options);
+        res.status(302).end();
+      },
+    };
+    next();
+  });
+  app.use("/api/auth", authRoutes);
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  try {
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    for (const provider of ["google", "github"]) {
+      const response = await fetch(`${origin}/api/auth/${provider}`, {
+        redirect: "manual",
+      });
+      assert.equal(response.status, 302);
+    }
+
+    assert.deepEqual(
+      loginOptions.map(({ authorizationParams, returnTo }) => ({
+        connection: authorizationParams.connection,
+        returnTo,
+      })),
+      [
+        {
+          connection: "google-oauth2",
+          returnTo: "/api/auth/signed-in",
+        },
+        { connection: "github", returnTo: "/api/auth/signed-in" },
+      ],
+    );
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("login blocks unverified accounts without setting a session cookie", async () => {
   const user = {
     emailVerified: false,
@@ -210,6 +419,18 @@ test("login blocks unverified accounts without setting a session cookie", async 
 
   assert.equal(res.statusCode, 403);
   assert.equal(res.cookies.length, 0);
+});
+
+test("passwordless provider users cannot authenticate with a password", async () => {
+  const user = new User({
+    firstName: "Grace",
+    lastName: "Hopper",
+    email: "grace@example.com",
+    emailVerified: true,
+    authProviders: [{ provider: "google", providerId: "google-oauth2|123" }],
+  });
+
+  assert.equal(await user.matchPassword("any password"), false);
 });
 
 test("login sets an http-only session cookie for a verified user", async () => {
@@ -244,13 +465,19 @@ test("login sets an http-only session cookie for a verified user", async () => {
   assert.equal(jwt.verify(res.cookies[0].value, "test-secret").tokenVersion, 2);
 });
 
-test("logout expires the session cookie", async () => {
+test("logout clears the app cookie and ends the Auth0 session", async () => {
   const controller = createAuthController({ nodeEnv: "production" });
   const res = createResponse();
+  let returnTo;
+  res.oidc = {
+    logout: async (options) => {
+      returnTo = options.returnTo;
+    },
+  };
 
   await controller.logout({}, res);
 
-  assert.equal(res.statusCode, 200);
+  assert.equal(returnTo, "/api/auth/signed-out");
   assert.equal(res.clearedCookies[0].name, "jwt");
   assert.equal(res.clearedCookies[0].options.secure, true);
   assert.equal("maxAge" in res.clearedCookies[0].options, false);

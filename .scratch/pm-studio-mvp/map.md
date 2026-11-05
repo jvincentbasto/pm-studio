@@ -9,6 +9,7 @@ The approved specification is [spec.md](./spec.md). The implementation tickets b
 5. [Task Kanban](./issues/05-task-kanban.md)
 6. [Guest account onboarding](./issues/06-guest-account-onboarding.md)
 7. [Guest limits, expiry, and upgrade](./issues/07-guest-limits-expiry-and-upgrade.md)
-8. [Deploy and verify the first release](./issues/08-deploy-and-verify-first-release.md)
+8. [Deploy the first release](./issues/08-deploy-and-verify-first-release.md)
+9. [Test coverage and release verification](./issues/09-test-coverage-and-release-verification.md)
 
 Later options are documented in the spec's Out of Scope section. Revisit them after the deployed first release.

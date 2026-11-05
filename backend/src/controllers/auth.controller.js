@@ -41,6 +41,37 @@ const reportError = (message, error) => {
   console.error(message, error?.name ?? "Unknown error");
 };
 
+const issueSession = ({ user, res, jwtSecret, nodeEnv, redirectTo }) => {
+  if (!jwtSecret) {
+    throw new Error("JWT_SECRET_KEY is not configured.");
+  }
+
+  const token = jwt.sign(
+    { tokenVersion: user.tokenVersion ?? 0 },
+    jwtSecret,
+    { subject: String(user._id), expiresIn: "7d" },
+  );
+
+  res.cookie(config.constants.jwt, token, cookieOptions(nodeEnv));
+  if (redirectTo) {
+    return res.redirect(redirectTo);
+  }
+
+  return res.status(200).json({
+    user: {
+      id: String(user._id),
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+    },
+  });
+};
+
+const normalizeName = (value, fallback = "User") => {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized.slice(0, 80) || fallback;
+};
+
 export const createAuthController = ({
   UserModel = User,
   mailer = emailService,
@@ -196,33 +227,103 @@ export const createAuthController = ({
           .status(403)
           .json({ error: "Verify your email before signing in." });
       }
-      if (!jwtSecret) {
-        throw new Error("JWT_SECRET_KEY is not configured.");
-      }
-
-      const token = jwt.sign(
-        { tokenVersion: user.tokenVersion ?? 0 },
-        jwtSecret,
-        { subject: String(user._id), expiresIn: "7d" },
-      );
-      res.cookie(config.constants.jwt, token, cookieOptions(nodeEnv));
-      return res.status(200).json({
-        user: {
-          id: String(user._id),
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-        },
-      });
+      return issueSession({ user, res, jwtSecret, nodeEnv });
     } catch (error) {
       reportError("Login failed.", error);
       return res.status(500).json({ error: "Could not sign in." });
     }
   };
 
+  const completeAuth0Login = async (claims, res) => {
+    if (!jwtSecret) {
+      throw new Error("JWT_SECRET_KEY is not configured.");
+    }
+
+    const [providerId, externalId] =
+      typeof claims?.sub === "string" ? claims.sub.split("|", 2) : [];
+    const provider = {
+      "google-oauth2": "google",
+      github: "github",
+    }[providerId];
+    const email = normalizeEmail(claims?.email);
+
+    if (!provider || !externalId || !isValidEmail(email)) {
+      throw new Error("Auth0 returned an unsupported identity.");
+    }
+
+    if (claims.email_verified !== true) {
+      throw new Error("Verify your email before signing in.");
+    }
+
+    const nameParts =
+      typeof claims.name === "string" ? claims.name.trim().split(/\s+/) : [];
+    const providerEntry = {
+      provider,
+      providerId: claims.sub,
+      avatarUrl: typeof claims.picture === "string" ? claims.picture : undefined,
+      emailVerified: true,
+    };
+    const linkedUser = await UserModel.findOne({
+      authProviders: {
+        $elemMatch: { provider, providerId: providerEntry.providerId },
+      },
+    });
+
+    if (linkedUser) {
+      if (normalizeEmail(linkedUser.email) !== email) {
+        throw new Error("This identity is already linked to another account.");
+      }
+      return issueSession({
+        user: linkedUser,
+        res,
+        jwtSecret,
+        nodeEnv,
+        redirectTo: config.envs.appUrl,
+      });
+    }
+
+    const firstName = normalizeName(claims.given_name ?? nameParts[0]);
+    const lastName = normalizeName(claims.family_name ?? nameParts[1]);
+    const accountWithEmail = await UserModel.findOne({ email });
+
+    if (accountWithEmail) {
+      accountWithEmail.emailVerified = true;
+      accountWithEmail.firstName ||= firstName;
+      accountWithEmail.lastName ||= lastName;
+      accountWithEmail.authProviders = accountWithEmail.authProviders ?? [];
+      accountWithEmail.authProviders.push(providerEntry);
+      await accountWithEmail.save();
+      return issueSession({
+        user: accountWithEmail,
+        res,
+        jwtSecret,
+        nodeEnv,
+        redirectTo: config.envs.appUrl,
+      });
+    }
+
+    const user = await UserModel.create({
+      firstName,
+      lastName,
+      email,
+      emailVerified: true,
+      authProviders: [providerEntry],
+    });
+    return issueSession({
+      user,
+      res,
+      jwtSecret,
+      nodeEnv,
+      redirectTo: config.envs.appUrl,
+    });
+  };
+
   const logout = async (_req, res) => {
     res.clearCookie(config.constants.jwt, expiredCookieOptions(nodeEnv));
-    return res.status(200).json({ message: "Signed out." });
+    if (res.oidc?.logout) {
+      return res.oidc.logout({ returnTo: "/api/auth/signed-out" });
+    }
+    return res.redirect(config.envs.appUrl);
   };
 
   const forgotPassword = async (req, res) => {
@@ -303,6 +404,7 @@ export const createAuthController = ({
   return {
     signup,
     login,
+    completeAuth0Login,
     logout,
     requestEmailVerification,
     verifyEmail,

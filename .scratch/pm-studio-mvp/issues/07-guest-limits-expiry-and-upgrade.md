@@ -10,4 +10,3 @@
 - [ ] The implementation defines the 3-day retention start, communicates expiry, and removes expired Guest data.
 - [ ] Guests receive a clear explanation when they reach a cap or their account expires.
 - [ ] A Guest can become a full account while retaining their workspace, projects, and tasks.
-- [ ] Backend tests cover cap boundaries, expiry cleanup, and conversion, including conflicting account identities.

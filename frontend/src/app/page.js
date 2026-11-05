@@ -156,20 +156,8 @@ export default function Home() {
     }
   }
 
-  async function signOut() {
-    setBusy(true);
-    setMessage(null);
-    try {
-      await request("/api/auth/logout", { method: "POST" });
-      setUser(null);
-      setWorkspaces([]);
-      setMode("login");
-      setMessage({ type: "success", text: "Signed out." });
-    } catch (error) {
-      setMessage({ type: "error", text: error.message });
-    } finally {
-      setBusy(false);
-    }
+  function signOut() {
+    window.location.assign(`${apiOrigin}/api/auth/logout`);
   }
 
   const isSignup = mode === "signup";
@@ -385,6 +373,23 @@ export default function Home() {
                           : "Reset password"}
               </button>
             </form>
+
+            {(mode === "login" || mode === "signup") && (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <a
+                  className="rounded-lg border border-slate-600 px-4 py-2.5 text-center text-sm font-medium hover:bg-slate-800"
+                  href={`${apiOrigin}/api/auth/google`}
+                >
+                  Continue with Google
+                </a>
+                <a
+                  className="rounded-lg border border-slate-600 px-4 py-2.5 text-center text-sm font-medium hover:bg-slate-800"
+                  href={`${apiOrigin}/api/auth/github`}
+                >
+                  Continue with GitHub
+                </a>
+              </div>
+            )}
 
             {(mode === "login" || mode === "signup") && (
               <button

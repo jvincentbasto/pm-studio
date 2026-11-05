@@ -22,7 +22,7 @@ const createTransporter = () => {
   });
 };
 
-const sendLink = async ({ email, path, parameter, token, subject, action }) => {
+const sendLink = async ({ email, path, parameter, token, subject, action, linkLabel }) => {
   const link = new URL(path, appUrl);
   link.searchParams.set(parameter, token);
   await createTransporter().sendMail({
@@ -30,6 +30,7 @@ const sendLink = async ({ email, path, parameter, token, subject, action }) => {
     to: email,
     subject,
     text: `${action}: ${link.toString()}`,
+    html: `<p>${action}: <a href="${link.toString()}">${linkLabel ?? 'PM Studio'}</a></p>`,
   });
 };
 
@@ -42,6 +43,7 @@ export const emailService = {
       token,
       subject: "Verify your PM Studio email",
       action: "Verify your email",
+      linkLabel: "PM Studio",
     }),
   sendPasswordResetEmail: (user, token) =>
     sendLink({
@@ -51,5 +53,6 @@ export const emailService = {
       token,
       subject: "Reset your PM Studio password",
       action: "Reset your password",
+      linkLabel: "PM Studio",
     }),
 };

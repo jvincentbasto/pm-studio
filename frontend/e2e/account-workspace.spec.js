@@ -1,5 +1,20 @@
 import { expect, test } from "@playwright/test";
 
+test("login offers Google and GitHub provider sign-in", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) =>
+    route.fulfill({ status: 401, json: { error: "Authentication required." } }),
+  );
+
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("link", { name: "Continue with Google" }),
+  ).toHaveAttribute("href", "http://localhost:8000/api/auth/google");
+  await expect(
+    page.getByRole("link", { name: "Continue with GitHub" }),
+  ).toHaveAttribute("href", "http://localhost:8000/api/auth/github");
+});
+
 test("user registers, verifies email, signs in, and creates a workspace", async ({
   page,
 }) => {
