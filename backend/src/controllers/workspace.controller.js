@@ -62,6 +62,12 @@ export const createWorkspaceController = ({
   };
 
   const create = async (req, res) => {
+    if (req.user.accountType === "guest") {
+      return res.status(403).json({
+        error: "Guest accounts use their demo workspace. Upgrade to create more.",
+      });
+    }
+
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
     if (name.length < 2 || name.length > 80) {
       return res
@@ -85,6 +91,12 @@ export const createWorkspaceController = ({
   };
 
   const invite = async (req, res) => {
+    if (req.user.accountType === "guest") {
+      return res.status(403).json({
+        error: "Guest accounts cannot invite members. Upgrade to collaborate.",
+      });
+    }
+
     const email = normalizeEmail(req.body?.email);
     if (email.length > 254 || !emailPattern.test(email)) {
       return res.status(400).json({ error: "Enter a valid email address." });

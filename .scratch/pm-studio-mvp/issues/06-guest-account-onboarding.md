@@ -4,9 +4,9 @@
 
 **Blocked by:** 01: Email/password accounts and workspace creation; 04: Project management; 05: Task Kanban.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] Visitors can verify their email and start a Guest account.
-- [ ] Each Guest receives an isolated workspace with useful seeded project and task data.
-- [ ] Guests can create, view, edit, and delete their own projects and tasks.
-- [ ] Guest data is inaccessible to other Guests and regular users without authorization.
+- [x] Visitors can verify their email and start a Guest account.
+- [x] Each Guest receives an isolated workspace with useful seeded project and task data.
+- [x] Guests can create, view, edit, and delete their own projects and tasks.
+- [x] Guest data is inaccessible to other Guests and regular users without authorization.

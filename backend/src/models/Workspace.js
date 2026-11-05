@@ -56,6 +56,14 @@ const workspaceSchema = new mongoose.Schema(
       type: [workspaceInvitationSchema],
       default: [],
     },
+    guestProjectCount: {
+      type: Number,
+      default: 0,
+    },
+    guestTaskCount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

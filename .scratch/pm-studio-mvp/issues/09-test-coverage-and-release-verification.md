@@ -9,9 +9,9 @@
 - [x] Backend and browser tests cover invitation acceptance, expiry, revocation, member removal, and workspace access.
 - [x] Backend and browser tests cover project workflows and denial of cross-workspace access.
 - [x] Backend and browser tests cover task workflows, assignment, status changes, invalid assignments, and access control.
-- [ ] Backend and browser tests cover Guest onboarding, core workflows, and data isolation.
-- [ ] Backend tests cover Guest cap boundaries, expiry cleanup, conversion, and conflicting account identities.
-- [ ] Browser smoke tests pass for account access, invitations, projects, Kanban tasks, and Guest conversion using isolated sample data.
+- [x] Backend and browser tests cover Guest onboarding, core workflows, and data isolation.
+- [x] Backend tests cover Guest cap boundaries, expiry cleanup, conversion, and conflicting account identities.
+- [x] Browser smoke tests pass for account access, invitations, projects, Kanban tasks, and Guest conversion using isolated sample data.
 - [ ] Authorization boundaries, email and invitation expiry, Guest cleanup, and secret handling are checked before release.
 - [ ] Core pages are keyboard-usable, with labeled controls, visible focus, and clear error states.
 - [ ] A backup or restore path is verified for the chosen database plan.

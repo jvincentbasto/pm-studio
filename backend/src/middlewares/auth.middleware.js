@@ -19,12 +19,27 @@ export const createProtectRoute =
 
     try {
       const user = await UserModel.findById(payload.sub);
+      if (!user && payload.accountType === "guest") {
+        return res.status(403).json({
+          error: "Guest access has expired and its data has been removed.",
+        });
+      }
       if (
         !user ||
         !user.emailVerified ||
         (user.tokenVersion ?? 0) !== (payload.tokenVersion ?? 0)
       ) {
         return res.status(401).json({ error: "Authentication required." });
+      }
+      if (
+        user.accountType === "expired" ||
+        (user.accountType === "guest" &&
+          user.guestExpiresAt &&
+          user.guestExpiresAt <= new Date())
+      ) {
+        return res.status(403).json({
+          error: "Guest access has expired. Guest data is being removed.",
+        });
       }
 
       req.user = user;

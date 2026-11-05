@@ -65,6 +65,20 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    accountType: {
+      type: String,
+      enum: ["regular", "guest", "expired"],
+      default: "regular",
+    },
+    guestTokenHash: {
+      type: String,
+      select: false,
+    },
+    guestTokenExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    guestExpiresAt: Date,
   },
   { timestamps: true },
 );
